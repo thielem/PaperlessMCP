@@ -679,16 +679,16 @@ public static class DocumentTools
             }
         }
 
-        var request = new DocumentUpdateRequest
-        {
-            Title = title,
-            Correspondent = correspondent == -1 ? null : correspondent,
-            DocumentType = documentType == -1 ? null : documentType,
-            StoragePath = storagePath == -1 ? null : storagePath,
-            Tags = parsedTags,
-            ArchiveSerialNumber = archiveSerialNumber,
-            Created = ParseDate(created)
-        };
+        // A dictionary (not DocumentUpdateRequest) because the client drops null properties,
+        // which would turn "-1 = clear" into a silent no-op. Null dictionary values are sent.
+        var request = new Dictionary<string, object?>();
+        if (title != null) request["title"] = title;
+        if (correspondent != null) request["correspondent"] = correspondent == -1 ? null : correspondent;
+        if (documentType != null) request["document_type"] = documentType == -1 ? null : documentType;
+        if (storagePath != null) request["storage_path"] = storagePath == -1 ? null : storagePath;
+        if (parsedTags != null) request["tags"] = parsedTags;
+        if (archiveSerialNumber != null) request["archive_serial_number"] = archiveSerialNumber;
+        if (ParseDate(created) is { } createdDate) request["created"] = createdDate;
 
         var result = await client.UpdateDocumentWithResultAsync(id, request).ConfigureAwait(false);
 

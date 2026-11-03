@@ -351,26 +351,60 @@ public class CustomFieldToolsTests : IDisposable
     }
 
     [Fact]
-    public async Task Assign_DocumentLinkField_WithInvalidId_OmitsValue()
+    public async Task Assign_DocumentLinkField_WithInvalidId_ReturnsValidationError()
     {
-        // Arrange: an unparsable ID yields a null value, and the client's serializer
-        // (DefaultIgnoreCondition = WhenWritingNull) omits null properties entirely.
         _factory.SetupGet("api/documents/1/", TestFixtures.Documents.CreateDocumentJson(1, "Test Doc"));
         _factory.SetupGet("api/custom_fields/1/", TestFixtures.CustomFields.CreateCustomFieldJson(1, "Related Documents", "documentlink"));
+
+        var result = await CustomFieldTools.Assign(_factory.Client, documentId: 1, fieldId: 1, value: "3, abc");
+
+        var json = JsonDocument.Parse(result);
+        json.RootElement.GetProperty("ok").GetBoolean().Should().BeFalse();
+        json.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be("VALIDATION");
+    }
+
+    [Theory]
+    [InlineData("Privat")]
+    [InlineData("privat")]
+    [InlineData("9wllnDrIhfTapcwY")]
+    public async Task Assign_SelectField_ResolvesLabelOrIdToOptionId(string value)
+    {
+        _factory.SetupGet("api/documents/1/", DocumentWithNullField);
+        _factory.SetupGet("api/custom_fields/1/", KontextFieldJson);
         _factory.MockHandler
             .When(HttpMethod.Patch, "https://paperless.example.com/api/documents/1/")
             .WithJsonContent<JsonElement>(json =>
-                !json.GetProperty("custom_fields")[0].TryGetProperty("value", out _))
+                // existing empty field (appended-to list: index 0) must keep an explicit "value": null, else Paperless 500s
+                json.GetProperty("custom_fields")[0].GetProperty("value").ValueKind == JsonValueKind.Null
+                && json.GetProperty("custom_fields")[1].GetProperty("value").GetString() == "9wllnDrIhfTapcwY")
             .Respond("application/json", TestFixtures.Documents.CreateDocumentJson(1, "Test Doc"));
 
-        // Act
-        var result = await CustomFieldTools.Assign(_factory.Client, documentId: 1, fieldId: 1, value: "3, abc");
+        var result = await CustomFieldTools.Assign(_factory.Client, documentId: 1, fieldId: 1, value: value);
 
-        // Assert
         var json = JsonDocument.Parse(result);
         json.RootElement.GetProperty("ok").GetBoolean().Should().BeTrue("because response was {0}", result);
-        json.RootElement.GetProperty("result").GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
+        json.RootElement.GetProperty("result").GetProperty("value").GetString().Should().Be("9wllnDrIhfTapcwY");
     }
+
+    [Fact]
+    public async Task Assign_SelectField_UnknownLabel_ReturnsValidationErrorWithOptions()
+    {
+        _factory.SetupGet("api/documents/1/", DocumentWithNullField);
+        _factory.SetupGet("api/custom_fields/1/", KontextFieldJson);
+
+        var result = await CustomFieldTools.Assign(_factory.Client, documentId: 1, fieldId: 1, value: "Nope");
+
+        var json = JsonDocument.Parse(result);
+        json.RootElement.GetProperty("ok").GetBoolean().Should().BeFalse();
+        json.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be("VALIDATION");
+        json.RootElement.GetProperty("error").GetProperty("message").GetString().Should().Contain("Privat");
+    }
+
+    private const string KontextFieldJson =
+        """{"id":1,"name":"Kontext","data_type":"select","extra_data":{"select_options":[{"id":"9wllnDrIhfTapcwY","label":"Privat"},{"id":"a2NXdmvrkKXofOzo","label":"Adaia"}]}}""";
+
+    private const string DocumentWithNullField =
+        """{"id":1,"title":"Test Doc","content":"","tags":[],"custom_fields":[{"field":3,"value":null}]}""";
 
     [Fact]
     public async Task Assign_WhenFieldNotFound_ReturnsError()

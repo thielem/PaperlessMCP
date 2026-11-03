@@ -68,7 +68,9 @@ public record DocumentCustomField
     [JsonPropertyName("field")]
     public int Field { get; init; }
 
+    // Paperless requires "value" on every entry (KeyError → 500 if omitted), so empty fields must send explicit null.
     [JsonPropertyName("value")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public object? Value { get; init; }
 }
 

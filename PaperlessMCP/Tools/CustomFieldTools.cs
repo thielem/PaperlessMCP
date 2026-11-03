@@ -232,7 +232,7 @@ public static class CustomFieldTools
         PaperlessClient client,
         [Description("Document ID")] int documentId,
         [Description("Custom field ID")] int fieldId,
-        [Description("Value to assign (string, number, boolean, or date depending on field type; comma-separated document IDs for 'documentlink')")] string value)
+        [Description("Value to assign (string, number, boolean, or date depending on field type; option label or ID for 'select'; comma-separated document IDs for 'documentlink')")] string value)
     {
         // Get current document to update its custom fields
         var document = await client.GetDocumentAsync(documentId).ConfigureAwait(false);
@@ -268,8 +268,22 @@ public static class CustomFieldTools
             CustomFieldDataType.Float => double.TryParse(value, out var d) ? d : null,
             CustomFieldDataType.Date => value, // Keep as string for dates
             CustomFieldDataType.DocumentLink => ParseDocumentLinkIds(value),
+            CustomFieldDataType.Select => field.ExtraData?.SelectOptions?
+                .FirstOrDefault(o => o.Id == value || string.Equals(o.Label, value, StringComparison.OrdinalIgnoreCase))?.Id,
             _ => value
         };
+
+        if (parsedValue == null)
+        {
+            var options = field.ExtraData?.SelectOptions?.Select(o => o.Label);
+            var errorResponse = McpErrorResponse.Create(
+                ErrorCodes.Validation,
+                $"Invalid value '{value}' for {field.DataType} field '{field.Name}'" +
+                (options != null && field.DataType == CustomFieldDataType.Select ? $". Valid options: {string.Join(", ", options)}" : ""),
+                meta: new McpMeta { PaperlessBaseUrl = client.BaseUrl }
+            );
+            return JsonSerializer.Serialize(errorResponse);
+        }
 
         // Update custom fields list
         var customFields = document.CustomFields.ToList();
@@ -290,14 +304,15 @@ public static class CustomFieldTools
             CustomFields = customFields
         };
 
-        var updatedDocument = await client.UpdateDocumentAsync(documentId, updateRequest).ConfigureAwait(false);
+        var result = await client.UpdateDocumentWithResultAsync(documentId, updateRequest).ConfigureAwait(false);
 
-        if (updatedDocument == null)
+        if (!result.IsSuccess)
         {
             var errorResponse = McpErrorResponse.Create(
                 ErrorCodes.UpstreamError,
-                "Failed to assign custom field to document",
-                meta: new McpMeta { PaperlessBaseUrl = client.BaseUrl }
+                $"Failed to assign custom field to document: {result.Error!.Message}",
+                new { status_code = (int)result.Error.StatusCode, response_body = result.Error.ResponseBody },
+                new McpMeta { PaperlessBaseUrl = client.BaseUrl }
             );
             return JsonSerializer.Serialize(errorResponse);
         }

@@ -260,7 +260,7 @@ public class PaperlessClient
     /// <summary>
     /// Updates a document with full error details.
     /// </summary>
-    public async Task<ApiResult<Document>> UpdateDocumentWithResultAsync(int id, DocumentUpdateRequest request, CancellationToken cancellationToken = default)
+    public async Task<ApiResult<Document>> UpdateDocumentWithResultAsync(int id, object request, CancellationToken cancellationToken = default)
     {
         return await PatchWithResultAsync<Document>($"api/documents/{id}/", request, cancellationToken).ConfigureAwait(false);
     }

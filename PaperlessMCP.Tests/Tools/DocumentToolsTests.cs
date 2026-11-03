@@ -1066,6 +1066,29 @@ public class DocumentToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task Update_WithMinusOne_SendsExplicitNullAndOmitsUnsetFields()
+    {
+        string? requestBody = null;
+        _factory.MockHandler
+            .When(HttpMethod.Patch, "https://paperless.example.com/api/documents/1/")
+            .With(request =>
+            {
+                requestBody = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+                return true;
+            })
+            .Respond("application/json", TestFixtures.Documents.CreateDocumentJson());
+
+        var result = await DocumentTools.Update(_factory.Client, 1, correspondent: -1, documentType: 5);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("ok").GetBoolean().Should().BeTrue();
+        var body = JsonDocument.Parse(requestBody!).RootElement;
+        body.GetProperty("correspondent").ValueKind.Should().Be(JsonValueKind.Null);
+        body.GetProperty("document_type").GetInt32().Should().Be(5);
+        body.TryGetProperty("storage_path", out _).Should().BeFalse();
+        body.TryGetProperty("title", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Update_ByDefault_OmitsContentToSaveTokens()
     {
         // Arrange - fixture document carries full OCR content

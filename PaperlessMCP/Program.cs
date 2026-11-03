@@ -152,7 +152,8 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
         client.Timeout = TimeSpan.FromSeconds(options.HttpTimeoutSeconds);
     })
     .AddHttpMessageHandler<PaperlessAuthHandler>()
-    .AddPolicyHandler(retryPolicy);
+    // Only retry GETs: replaying POST/PATCH after a 5xx or timeout can duplicate uploads or re-apply partial writes.
+    .AddPolicyHandler(request => request.Method == HttpMethod.Get ? retryPolicy : Policy.NoOpAsync<HttpResponseMessage>());
 
     services.AddTransient<PaperlessAuthHandler>();
 }
